@@ -8,18 +8,20 @@ Electron and React.
 
 ## PIN Lock
 
-The kiosk starts locked. Enter the kiosk PIN on the touchscreen to enable NFC scanning. By default the code uses
-`ATTENDANCE_KIOSK_PIN`, and if that environment variable is not set it falls back to `694694`.
+The kiosk starts locked. Enter the attendance PIN on the touchscreen to enable NFC scanning. Enter the export PIN to
+open the report/export modal. Locking attendance with the attendance PIN also sends the configured report email if
+email delivery is enabled. By default the attendance PIN uses `ATTENDANCE_KIOSK_PIN` and falls back to `694694`;
+set `ATTENDANCE_EXPORT_PIN` for the export path.
 
 ## Importing Student Names
 
-Students are stored in the database using their unique 9-digit ID number. Program each NFC sticker to emit that 9-digit ID, followed by Enter, so tapping the sticker submits the same value a student could type manually.
+Students are stored in the database using their unique 10-digit ID number. Program each NFC sticker to emit that 10-digit ID, followed by Enter, so tapping the sticker submits the same value a student could type manually.
 
 Student names can be imported using a .csv file. It should follow the provided format below, including the necessary header.
 
     id_number,first_name,last_name
-    123456789,John,Doe
-    694694694,Jane,Doe
+    1234567890,John,Doe
+    6946946946,Jane,Doe
 
 ## Development
 
@@ -99,6 +101,7 @@ REPORT_EMAIL_TO_ADDRESS="..." \
 BACKUP_S3_BUCKET="..." \
 BACKUP_S3_PREFIX="..." \
 ATTENDANCE_KIOSK_PIN="..." \
+ATTENDANCE_EXPORT_PIN="..." \
 attendance-kiosk --kiosk >> /var/log/attendance-kiosk/out.log 2>> /var/log/attendance-kiosk/err.log
 ```
 

@@ -17,3 +17,5 @@ export interface CurrentAttendanceEntry {
     lastName: string;
     checkinTime: string;
 }
+
+export type AdminCodeAction = "attendance" | "export";

@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
+import { AdminCodeAction } from "../types";
 
 interface FormProps {
     isUnlocked: boolean;
     isActive: boolean;
-    onUnlock: (pin: string) => Promise<boolean>;
+    onAdminCode: (pin: string) => Promise<AdminCodeAction | null>;
     onSuccess: (name: string) => void;
 }
 
@@ -11,7 +12,7 @@ function isDigit(c: string) {
     return c >= "0" && c <= "9";
 }
 
-export default function Form({ isUnlocked, isActive, onUnlock, onSuccess }: FormProps) {
+export default function Form({ isUnlocked, isActive, onAdminCode, onSuccess }: FormProps) {
     const [value, setValue] = useState("");
     const [isLastInputFromNumpad, setIsLastInputFromNumpad] = useState(false);
     const [lastShakeTime, setLastShakeTime] = useState(null);
@@ -62,9 +63,9 @@ export default function Form({ isUnlocked, isActive, onUnlock, onSuccess }: Form
 
     async function handleSubmit(event: React.FormEvent) {
         event.preventDefault();
-        if (!isUnlocked || value.length !== 9) {
-            const success = await onUnlock(value);
-            if (!success) {
+        if (!isUnlocked || value.length !== 10) {
+            const action = await onAdminCode(value);
+            if (action === null) {
                 setValue("");
                 setLastShakeTime(new Date());
                 return;

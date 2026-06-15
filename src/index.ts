@@ -35,7 +35,8 @@ if (require("electron-squirrel-startup")) {
 }
 
 const DB_PATH = path.join(app.getPath("userData"), "data.db");
-const KIOSK_PIN = process.env.ATTENDANCE_KIOSK_PIN || "PUT_PIN_HERE_AND_DON'T_COMMIT";
+const KIOSK_PIN = process.env.ATTENDANCE_KIOSK_PIN || "694694";
+const EXPORT_PIN = process.env.ATTENDANCE_EXPORT_PIN || "";
 
 (async () => {
     const db = await open({
@@ -148,8 +149,43 @@ const createWindow = async () => {
 
     const slackClient = new WebClient(process.env.SLACK_TOKEN);
 
-    ipcMain.handle("unlockWithPin", async (_, pin) => {
-        return { success: pin === KIOSK_PIN };
+    ipcMain.handle("authorizeAdminCode", async (_, pin) => {
+        if (pin === KIOSK_PIN) {
+            return { success: true, action: "attendance" as const };
+        }
+        if (EXPORT_PIN && pin === EXPORT_PIN) {
+            return { success: true, action: "export" as const };
+        }
+        return { success: false };
+    });
+
+    ipcMain.handle("closeAttendance", async () => {
+        try {
+            const currentAttendance = await getCurrentAttendance(db, getToday());
+            const now = toISOString(new Date());
+            for (const attendee of currentAttendance) {
+                await db.run(
+                    "INSERT INTO checkin (timestamp, idNumber) VALUES (?, ?)",
+                    now,
+                    attendee.idNumber,
+                );
+            }
+
+            let emailed = false;
+            if (enabledActions.sendReportEmail) {
+                try {
+                    await sendReportEmail(db);
+                    emailed = true;
+                } catch (emailErr) {
+                    console.log("Failed to send attendance close email", emailErr);
+                }
+            }
+
+            return { success: true, numClosed: currentAttendance.length, emailed };
+        } catch (err) {
+            dialog.showErrorBox("Error", err.toString());
+            return { success: false, numClosed: 0, emailed: false };
+        }
     });
 
     ipcMain.handle("submit", async (_, idNumber) => {
@@ -297,7 +333,7 @@ const createWindow = async () => {
                 const firstName = record.first_name.trim();
                 const lastName = record.last_name.trim();
 
-                if (idNumber.length !== 9 || !firstName || !lastName) {
+                if (idNumber.length !== 10 || !firstName || !lastName) {
                     numFailure++;
                     continue;
                 }

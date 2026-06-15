@@ -3,13 +3,18 @@ import Clock from "./Clock";
 import AttendanceRoster from "./AttendanceRoster";
 import Form from "./Form";
 import Logo from "./Logo";
+import ExportModal from "./ExportModal";
 import Modal from "react-modal";
-import { CurrentAttendanceEntry } from "../types";
+import { AdminCodeAction, CurrentAttendanceEntry, EnabledActions } from "../types";
 
 const PROMPT_SCAN = "tap your NFC sticker on reader or enter PIN to get data";
-const PROMPT_LOCKED = "Enter PIN to unlock scanning";
+const PROMPT_LOCKED = "Enter attendance PIN to unlock scanning or export PIN for reports";
 const PROMPT_WRONG_PIN = "Wrong PIN — try again";
+const PROMPT_CLOSE_ERROR = "Could not close attendance";
 const PROMPT_SUCCESS = "Check-in recorded";
+const PROMPT_CLOSED = "Attendance closed";
+const PROMPT_CLOSED_EMAIL = "Attendance closed and email sent";
+const PROMPT_EXPORT = "Export reports";
 
 export default function App() {
     const [isUnlocked, setIsUnlocked] = useState(false);
@@ -18,26 +23,60 @@ export default function App() {
     const [hasFocus, setHasFocus] = useState(false);
     const [showRoster, setShowRoster] = useState(false);
     const [attendance, setAttendance] = useState<CurrentAttendanceEntry[]>([]);
+    const [exportModalOpen, setExportModalOpen] = useState(false);
+    const [enabledActions, setEnabledActions] = useState<EnabledActions>({
+        sendToSlack: false,
+        syncToMyPulse: false,
+        sendReportEmail: false,
+        backupDBToS3: false,
+    });
 
     function handleSubmit(name: string) {
         setPromptText(name ? `${name} clocked in` : PROMPT_SUCCESS);
         setLastPromptTime(new Date());
     }
 
-    async function handleUnlock(pin: string) {
-        const response = await window.electron.unlockWithPin(pin);
-        if (!response.success) {
+    async function handleAdminCode(pin: string): Promise<AdminCodeAction | null> {
+        const response = await window.electron.authorizeAdminCode(pin);
+        if (!response.success || !response.action) {
             setPromptText(PROMPT_WRONG_PIN);
             setLastPromptTime(new Date());
-            return false;
+            return null;
+        }
+
+        if (response.action === "export") {
+            setExportModalOpen(true);
+            setPromptText(PROMPT_EXPORT);
+            setLastPromptTime(new Date());
+            return "export";
         }
 
         const nextUnlocked = !isUnlocked;
+        if (!nextUnlocked) {
+            const closeResponse = await window.electron.closeAttendance();
+            if (!closeResponse.success) {
+                setPromptText(PROMPT_CLOSE_ERROR);
+                setLastPromptTime(new Date());
+                return null;
+            }
+            setPromptText(
+                closeResponse.emailed
+                    ? (closeResponse.numClosed > 0
+                        ? `${PROMPT_CLOSED_EMAIL} — ${closeResponse.numClosed} checked out`
+                        : PROMPT_CLOSED_EMAIL)
+                    : (closeResponse.numClosed > 0
+                        ? `${PROMPT_CLOSED} — ${closeResponse.numClosed} checked out`
+                        : PROMPT_CLOSED),
+            );
+        }
+
         setIsUnlocked(nextUnlocked);
         setShowRoster(false);
-        setPromptText(nextUnlocked ? PROMPT_SCAN : PROMPT_LOCKED);
+        if (nextUnlocked) {
+            setPromptText(PROMPT_SCAN);
+        }
         setLastPromptTime(new Date());
-        return true;
+        return "attendance";
     }
 
     async function refreshAttendance() {
@@ -57,6 +96,10 @@ export default function App() {
         let timeout: ReturnType<typeof setTimeout> | undefined;
         if (promptText.endsWith("clocked in") || promptText === PROMPT_SUCCESS) {
             timeout = setTimeout(() => setPromptText(PROMPT_SCAN), 2000);
+        } else if (promptText.startsWith(PROMPT_CLOSED)) {
+            timeout = setTimeout(() => setPromptText(PROMPT_LOCKED), 2000);
+        } else if (promptText === PROMPT_CLOSE_ERROR) {
+            timeout = setTimeout(() => setPromptText(PROMPT_LOCKED), 10000);
         } else if (promptText === PROMPT_WRONG_PIN) {
             timeout = setTimeout(() => setPromptText(PROMPT_LOCKED), 10000);
         }
@@ -75,6 +118,8 @@ export default function App() {
         window.addEventListener("focus", handleFocus);
         window.addEventListener("blur", handleBlur);
 
+        window.electron.getEnabledActions().then(setEnabledActions);
+
         return () => {
             window.removeEventListener("focus", handleFocus);
             window.removeEventListener("blur", handleBlur);
@@ -91,10 +136,16 @@ export default function App() {
         return () => clearInterval(interval);
     }, [isUnlocked, showRoster]);
 
+    function handleCloseExportModal() {
+        setExportModalOpen(false);
+        setPromptText(isUnlocked ? PROMPT_SCAN : PROMPT_LOCKED);
+        setLastPromptTime(new Date());
+    }
+
     let footerClass = "footer";
-    if (promptText.endsWith("clocked in") || promptText === PROMPT_SUCCESS) {
+    if (promptText.endsWith("clocked in") || promptText === PROMPT_SUCCESS || promptText.startsWith(PROMPT_CLOSED)) {
         footerClass += " ok";
-    } else if (promptText === PROMPT_WRONG_PIN) {
+    } else if (promptText === PROMPT_WRONG_PIN || promptText === PROMPT_CLOSE_ERROR) {
         footerClass += " error";
     }
 
@@ -130,7 +181,7 @@ export default function App() {
                             <Form
                                 isUnlocked={false}
                                 isActive={true}
-                                onUnlock={handleUnlock}
+                                onAdminCode={handleAdminCode}
                                 onSuccess={(name) => {
                                     refreshAttendance();
                                     handleSubmit(name);
@@ -140,7 +191,7 @@ export default function App() {
                         <Form
                             isUnlocked={true}
                             isActive={true}
-                            onUnlock={handleUnlock}
+                            onAdminCode={handleAdminCode}
                             onSuccess={(name) => {
                                 refreshAttendance();
                                 handleSubmit(name);
@@ -152,6 +203,10 @@ export default function App() {
                 <p className="prompt">{promptText}</p>
             </div>
             <p className="source-credit">Modified from Stuypulse attendance-kiosk</p>
+            <ExportModal
+                isOpen={exportModalOpen}
+                onClose={handleCloseExportModal}
+                enabledActions={enabledActions} />
         </>
     );
 }

@@ -1,13 +1,14 @@
 // See the Electron documentation for details on how to use preload scripts:
 // https://www.electronjs.org/docs/latest/tutorial/process-model#preload-scripts
 import { contextBridge, ipcRenderer } from "electron";
-import { TodaysStats, EnabledActions, CurrentAttendanceEntry } from "./types";
+import { AdminCodeAction, TodaysStats, EnabledActions, CurrentAttendanceEntry } from "./types";
 
 declare global {
     interface Window {
         electron: {
             submit: (idNumber: string) => Promise<{ success: boolean, name?: string }>;
-            unlockWithPin: (pin: string) => Promise<{ success: boolean }>;
+            authorizeAdminCode: (pin: string) => Promise<{ success: boolean, action?: AdminCodeAction }>;
+            closeAttendance: () => Promise<{ success: boolean, numClosed: number, emailed: boolean }>;
             getTodaysStats: () => Promise<TodaysStats>;
             getCurrentAttendance: () => Promise<CurrentAttendanceEntry[]>;
             getEnabledActions: () => Promise<EnabledActions>;
@@ -24,7 +25,8 @@ declare global {
 
 contextBridge.exposeInMainWorld("electron", {
     submit: (idNumber: string) => ipcRenderer.invoke("submit", idNumber),
-    unlockWithPin: (pin: string) => ipcRenderer.invoke("unlockWithPin", pin),
+    authorizeAdminCode: (pin: string) => ipcRenderer.invoke("authorizeAdminCode", pin),
+    closeAttendance: () => ipcRenderer.invoke("closeAttendance"),
     getTodaysStats: () => ipcRenderer.invoke("getTodaysStats"),
     getCurrentAttendance: () => ipcRenderer.invoke("getCurrentAttendance"),
     getEnabledActions: () => ipcRenderer.invoke("getEnabledActions"),
